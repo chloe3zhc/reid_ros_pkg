@@ -15,7 +15,7 @@ class TopicSubscriberSaver:
         
         # 保存路径配置
         self.save_directory = rospy.get_param('~save_directory', os.path.join(os.getcwd(), 'subscribed_data'))
-        self.topic_name = rospy.get_param('~topic_name', '/reid_node_0/cluster_data')
+        self.topic_name = rospy.get_param('~topic_name', '/reid_node_0/result')
         self.message_type = rospy.get_param('~message_type', 'String')
         self.save_format = rospy.get_param('~save_format', 'json')  # 可选: pickle, json
         
