@@ -39,6 +39,8 @@ class reid_node_0:
         self.video_topic = rospy.get_param('~video_topic', '/video_pub_node/image_raw_0')
         # 重识别输出图像话题
         self.output_image_topic = rospy.get_param('~output_image_topic', '/reid_node_0/result_image')
+        # ByteTrack跟踪输出图像话题
+        self.bytetrack_output_image_topic = rospy.get_param('~bytetrack_output_image_topic', '/reid_node_0/bytetrack_result_image')
         # 重识别结果话题
         self.result_topic = rospy.get_param('~result_topic', '/reid_node_0/result')
         # 聚类数据话题
@@ -65,6 +67,7 @@ class reid_node_0:
 
         # 发布处理结果话题
         self.image_pub = rospy.Publisher(self.output_image_topic, Image, queue_size=10)
+        self.bytetrack_image_pub = rospy.Publisher(self.bytetrack_output_image_topic, Image, queue_size=10)
         self.result_pub = rospy.Publisher(self.result_topic, String, queue_size=10)
         self.cluster_data_pub = rospy.Publisher(self.cluster_data_topic, String, queue_size=10)
 
@@ -97,12 +100,20 @@ class reid_node_0:
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
             # 执行重识别处理
-            annotated_image = self.process_reid(cv_image)
+            reid_annotated_image = self.process_reid(cv_image)
 
-            # 发布处理后的图像
-            annotated_msg = self.bridge.cv2_to_imgmsg(annotated_image, "bgr8")
-            annotated_msg.header = data.header  # 保持原始消息头
-            self.image_pub.publish(annotated_msg)
+            # 执行ByteTrack跟踪处理
+            bytetrack_annotated_image = self.process_bytetrack(cv_image)
+
+            # 发布重识别处理后的图像
+            reid_annotated_msg = self.bridge.cv2_to_imgmsg(reid_annotated_image, "bgr8")
+            reid_annotated_msg.header = data.header  # 保持原始消息头
+            self.image_pub.publish(reid_annotated_msg)
+
+            # 发布ByteTrack跟踪处理后的图像
+            bytetrack_annotated_msg = self.bridge.cv2_to_imgmsg(bytetrack_annotated_image, "bgr8")
+            bytetrack_annotated_msg.header = data.header  # 保持原始消息头
+            self.bytetrack_image_pub.publish(bytetrack_annotated_msg)
 
             # 发布结果信息
             result_msg = String()
@@ -216,7 +227,37 @@ class reid_node_0:
 
         # 返回特征列表
         return [feat.flatten() for feat in feats_np]
-    
+
+    def process_bytetrack(self, frame):
+        """执行ByteTrack目标跟踪处理"""
+        # 运行ByteTrack推理 - 使用bytetrack配置文件
+        results = self.yolo_model.track(frame, persist=True, tracker="bytetrack.yaml", show=False, classes=[0], verbose=False)
+
+        # 在帧上绘制跟踪结果
+        annotated_frame = frame.copy()
+        if results[0].boxes is not None:
+            for box in results[0].boxes:
+                # 获取边界框坐标 (x1, y1, x2, y2)
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+
+                # 确保坐标在图像范围内
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                x2 = min(frame.shape[1], x2)
+                y2 = min(frame.shape[0], y2)
+
+                # 获取跟踪ID（如果存在）
+                track_id = int(box.id[0].cpu().numpy()) if box.id is not None else 0
+                confidence = float(box.conf[0].cpu().numpy())
+
+                # 绘制边界框
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+                # 在边界框上方显示跟踪ID
+                label = f"BT: {track_id}"
+                cv2.putText(annotated_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+        return annotated_frame
 
 
 def assign_id_to_feature(feature, known_features, known_ids, threshold=0.9):
