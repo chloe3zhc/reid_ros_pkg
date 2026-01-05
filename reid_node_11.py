@@ -1,6 +1,18 @@
 #!/home/u/ZHC/FusionReID-master/.venv/bin/python3.8
 #coding: utf-8
 
+'''
+reid_ros_11.py文件
+设置节点 reid_node_0 
+订阅话题
+/feynman_camera/M1CF118G24070001/rgb/image_rect_color
+/video_pub_node/image_raw_0
+发布话题
+/reid_node_0/result_image
+/reid_node_0/result
+/reid_node_0/cluster_data
+'''
+
 import rospy
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
@@ -240,7 +252,8 @@ class reid_node_0:
         )
 
         # 订阅图像话题
-        self.image_sub = rospy.Subscriber(self.camera_topic, Image, self.image_callback)
+        self.camera_sub = rospy.Subscriber(self.camera_topic, Image, self.image_callback)
+        self.image_sub = rospy.Subscriber(self.video_topic, Image, self.image_callback)
 
         # 发布处理结果话题
         self.image_pub = rospy.Publisher(self.output_image_topic, Image, queue_size=10)
@@ -274,10 +287,6 @@ class reid_node_0:
         try:
             # 将ROS图像消息转换为OpenCV图像
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-
-            # 显示接收到的原始图像
-            # cv2.imshow("Received Image", cv_image)
-            # cv2.waitKey(1)  # 处理GUI事件，等待1毫秒
 
             # 执行重识别处理
             annotated_image = self.process_reid(cv_image)
