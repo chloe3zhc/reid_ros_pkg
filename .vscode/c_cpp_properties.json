@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/opt/ros/noetic/include/**",
+        "/home/u/catkin_ws/devel/include/**",
+        "/home/u/catkin_ws/src/ros-feynman-camera/include/**",
+        "/home/u/catkin_ws/src/reid_ros_pkg/include/**",
+        "/home/u/catkin_ws/src/yolo_test_pkg/include/**",
+        "/home/u/catkin_ws/src/yolov11/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
