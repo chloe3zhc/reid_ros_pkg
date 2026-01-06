@@ -28,7 +28,7 @@ import json
 '''
 class ClusteredMemoryManager:
     def __init__(self, max_clusters=100, eps=0.20, min_samples=2,
-        update_rate=0.1, max_inactive_seconds=50.0, fps=15):
+        update_rate=0, max_inactive_seconds=50.0, fps=15):
         # 簇存储
         self.clusters = []  # 簇中心 [numpy array]
         self.cluster_ids = []  # 簇ID [int]
@@ -195,6 +195,18 @@ class ClusteredMemoryManager:
         # 4. 删除被合并的簇
         for lst in [self.clusters, self.cluster_ids, self.cluster_sizes, self.last_active_time]:
             lst.pop(j)
+
+    def add_feature_as_cluster(self, feature, cluster_id=None):
+        """将特征作为新簇添加，指定簇ID"""
+        timestamp = time.time()
+
+        self.total_clusters_created += 1
+        self.clusters.append(feature.copy())
+        self.cluster_ids.append(cluster_id)
+        self.cluster_sizes.append(1)
+        self.last_active_time.append(timestamp)
+
+        return cluster_id
 
     def get_memory_stats(self):
         """获取内存统计信息"""
