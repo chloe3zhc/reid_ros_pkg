@@ -50,7 +50,7 @@ class reid_node_0:
         self.cluster_data_topic = rospy.get_param('~cluster_data_topic', '/reid_node_0/cluster_data')
 
         # 获取目标图像路径参数
-        self.target_image_path = rospy.get_param('~target_image_path', '/home/u/Pictures/zhc_1.png')
+        self.target_image_path = rospy.get_param('~target_image_path', '/home/u/Pictures/zhc_2.jpg')
 
         self.bridge = CvBridge()
 
@@ -122,14 +122,14 @@ class reid_node_0:
                 # 提取ReID特征
                 self.target_feature = self.extract_reid_features_batch([cropped_target], self.reid_model, cfg, self.device)[0]
 
-                # 将目标特征添加到聚类内存管理器中，设置ID为100
-                self.memory_manager.add_feature_as_cluster(self.target_feature, cluster_id=100)
+                # 将目标特征添加到聚类内存管理器中，设置ID为0
+                self.memory_manager.add_feature_as_cluster(self.target_feature, cluster_id=0)
 
                 self.target_set = True
 
                 rospy.loginfo(f"Target set successfully from image {image_path}")
                 rospy.loginfo(f"Target feature shape: {self.target_feature.shape}")
-                rospy.loginfo(f"Target cluster ID set to 100")
+                rospy.loginfo(f"Target cluster ID set to 0")
                 return True
             else:
                 rospy.logerr(f"No objects detected in target image {image_path}")
@@ -139,7 +139,7 @@ class reid_node_0:
             rospy.logerr(f"Error setting target from image {image_path}: {e}")
             return False
 
-    def is_target_match(self, feature, threshold=0.85):
+    def is_target_match(self, feature, threshold=0.88):
         """检查特征是否与目标匹配"""
         if not self.target_set:
             # 如果没有设置目标，则认为所有对象都是目标（显示所有）
@@ -373,8 +373,8 @@ class reid_node_0:
 
         return annotated_frame
 
+    # 执行目标匹配处理，与任务目标匹配的用红色框标注，其他不匹配的用绿色框
     def process_target_with_color_coding(self, frame):
-        """执行目标匹配处理，与任务目标匹配的用红色框标注，其他不匹配的用绿色框"""
         current_time = time.time()
 
         # 运行跟踪推理
@@ -400,18 +400,18 @@ class reid_node_0:
                 feature = self.extract_reid_features_batch([cropped_img], self.reid_model, cfg, self.device)[0]
 
                 # 检查是否与目标匹配
-                is_match = self.is_target_match(feature)
+                # is_match = self.is_target_match(feature)
 
                 # 使用聚类内存管理分配ID
                 reid_id = self.memory_manager.assign_feature(feature, current_time)
 
-                # 保存结果
-                all_results.append({
-                    'bbox': (x1, y1, x2, y2),
-                    'reid_id': reid_id,
-                    'confidence': box.conf[0].cpu().numpy(),
-                    'is_match': is_match
-                })
+                if reid_id == 0:
+                    # 保存结果
+                    all_results.append({
+                        'bbox': (x1, y1, x2, y2),
+                        'reid_id': reid_id,
+                        'confidence': box.conf[0].cpu().numpy()
+                    })
 
         # 在帧上绘制所有目标，匹配的用红色框，不匹配的用绿色框
         annotated_frame = frame.copy()
@@ -419,17 +419,16 @@ class reid_node_0:
             x1, y1, x2, y2 = result['bbox']
             reid_id = result['reid_id']
             confidence = result['confidence']
-            is_match = result['is_match']
 
             # 根据是否匹配选择颜色：匹配的用红色，不匹配的用绿色
-            color = (0, 0, 255) if is_match else (0, 255, 0)  # 红色 if match, 绿色 if not match
+            color = (0, 0, 255)
 
             # 绘制边界框
             cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
 
             # 在边界框上方显示重识别ID
             if reid_id is not None:
-                label = f"Target ID: {reid_id}" if is_match else f"ID: {reid_id}"
+                label = f"Target ID: {reid_id}"
                 cv2.putText(annotated_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         return annotated_frame
