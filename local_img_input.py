@@ -19,7 +19,7 @@ class VideoPublisher:
         rospy.init_node('video_pub_node', anonymous=True)
 
         # 从ROS参数获取视频文件路径或使用默认值
-        self.video_path_0 = rospy.get_param('~video_path_0', '/home/u/Videos/zhc1_10.mp4')
+        self.video_path_0 = rospy.get_param('~video_path_0', '/home/u/Videos/dancetrack_test1.mp4')
 
         self.video_topic_0 = rospy.get_param('~video_topic_0', '/video_pub_node/image_raw_0')
 
