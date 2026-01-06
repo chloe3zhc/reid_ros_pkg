@@ -1,6 +1,9 @@
 #!/home/u/ZHC/FusionReID-master/.venv/bin/python3.8
 #coding: utf-8
 
+# 实现了给定图像，在相机图像中框选出目标
+# 问题：准确率不高，相似度无法准确区分
+
 '''
 reid_track_base.py文件
 设置节点 reid_track_base_node
@@ -50,7 +53,11 @@ class reid_node_0:
         self.cluster_data_topic = rospy.get_param('~cluster_data_topic', '/reid_node_0/cluster_data')
 
         # 获取目标图像路径参数
-        self.target_image_path = rospy.get_param('~target_image_path', '/home/u/Pictures/zhc_2.jpg')
+        self.target_image_path = rospy.get_param('~target_image_path', '/home/u/Pictures/zhc_1.png')
+
+        # 相似度阈值
+        self.similarity_value = rospy.get_param('~similarity_value', 0.80)
+
 
         self.bridge = CvBridge()
 
@@ -84,7 +91,7 @@ class reid_node_0:
         # 发布处理结果话题
         self.image_pub = rospy.Publisher(self.output_image_topic, Image, queue_size=10)
         self.target_image_pub = rospy.Publisher(self.target_output_image_topic, Image, queue_size=10)
-        self.bytetrack_image_pub = rospy.Publisher(self.bytetrack_output_image_topic, Image, queue_size=10)
+        # self.bytetrack_image_pub = rospy.Publisher(self.bytetrack_output_image_topic, Image, queue_size=10)
         self.result_pub = rospy.Publisher(self.result_topic, String, queue_size=10)
         self.cluster_data_pub = rospy.Publisher(self.cluster_data_topic, String, queue_size=10)
 
@@ -139,51 +146,6 @@ class reid_node_0:
             rospy.logerr(f"Error setting target from image {image_path}: {e}")
             return False
 
-    def is_target_match(self, feature, threshold=0.88):
-        """检查特征是否与目标匹配"""
-        if not self.target_set:
-            # 如果没有设置目标，则认为所有对象都是目标（显示所有）
-            return True
-
-        # 查找ID为100的簇特征
-        target_cluster_idx = None
-        for i, cluster_id in enumerate(self.memory_manager.cluster_ids):
-            if cluster_id == 100:
-                target_cluster_idx = i
-                break
-        
-        if target_cluster_idx is None:
-            # 如果没有找到ID为100的簇，使用原始目标特征
-            if self.target_feature is not None:
-                # 计算余弦相似度
-                dot_product = np.dot(feature, self.target_feature)
-                norm_product = np.linalg.norm(feature) * np.linalg.norm(self.target_feature)
-
-                if norm_product == 0:
-                    similarity = 0
-                else:
-                    similarity = dot_product / norm_product
-
-                # 如果相似度超过阈值，则认为是匹配的目标
-                return similarity >= threshold
-            else:
-                return False
-
-        # 使用ID为100的簇特征进行匹配
-        target_cluster_feature = self.memory_manager.clusters[target_cluster_idx]
-
-        # 计算余弦相似度
-        dot_product = np.dot(feature, target_cluster_feature)
-        norm_product = np.linalg.norm(feature) * np.linalg.norm(target_cluster_feature)
-
-        if norm_product == 0:
-            similarity = 0
-        else:
-            similarity = dot_product / norm_product
-
-        # 如果相似度超过阈值，则认为是匹配的目标
-        return similarity >= threshold
-
     def load_models(self):
         """加载YOLO和ReID模型"""
         # Load YOLO model
@@ -207,29 +169,13 @@ class reid_node_0:
             # 将ROS图像消息转换为OpenCV图像
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
-            # 执行重识别处理
-            # reid_annotated_image = self.process_reid(cv_image)
-
             # 执行目标匹配处理（匹配的用红色框，不匹配的用绿色框）
             target_annotated_image = self.process_target_with_color_coding(cv_image)
-
-            # 执行ByteTrack跟踪处理
-            bytetrack_annotated_image = self.process_bytetrack(cv_image)
-
-            # 发布重识别处理后的图像
-            # reid_annotated_msg = self.bridge.cv2_to_imgmsg(reid_annotated_image, "bgr8")
-            # reid_annotated_msg.header = data.header  # 保持原始消息头
-            # self.image_pub.publish(reid_annotated_msg)
 
             # 发布目标匹配处理后的图像
             target_annotated_msg = self.bridge.cv2_to_imgmsg(target_annotated_image, "bgr8")
             target_annotated_msg.header = data.header  # 保持原始消息头
             self.target_image_pub.publish(target_annotated_msg)
-
-            # 发布ByteTrack跟踪处理后的图像
-            bytetrack_annotated_msg = self.bridge.cv2_to_imgmsg(bytetrack_annotated_image, "bgr8")
-            bytetrack_annotated_msg.header = data.header  # 保持原始消息头
-            self.bytetrack_image_pub.publish(bytetrack_annotated_msg)
 
             # 发布结果信息
             result_msg = String()
@@ -262,117 +208,6 @@ class reid_node_0:
         except Exception as e:
             rospy.logerr(f"Error publishing cluster data: {e}")
 
-    '''
-    def process_reid(self, frame):
-        """执行重识别处理（显示所有检测到的对象）"""
-        current_time = time.time()
-
-        # 运行跟踪推理
-        results = self.yolo_model.track(frame, show=False, classes=[0], persist=True, verbose=False)  # 不显示结果，但保留跟踪ID
-
-        # 为每个检测框分配重识别ID
-        self.reid_results = []
-        if results[0].boxes is not None:
-            for i, box in enumerate(results[0].boxes):
-                # 获取边界框坐标 (x1, y1, x2, y2)
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
-
-                # 确保坐标在图像范围内
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = min(frame.shape[1], x2)
-                y2 = min(frame.shape[0], y2)
-
-                # 裁剪图像
-                cropped_img = frame[y1:y2, x1:x2]
-
-                # 提取ReID特征
-                feature = self.extract_reid_features_batch([cropped_img], self.reid_model, cfg, self.device)[0]
-
-                # 使用聚类内存管理分配ID
-                reid_id = self.memory_manager.assign_feature(feature, current_time)
-
-                # 保存结果
-                self.reid_results.append({
-                    'bbox': (x1, y1, x2, y2),
-                    'reid_id': reid_id,
-                    'confidence': box.conf[0].cpu().numpy()
-                })
-
-        # 在帧上绘制重识别ID而不是跟踪ID
-        annotated_frame = frame.copy()
-        for result in self.reid_results:
-            x1, y1, x2, y2 = result['bbox']
-            reid_id = result['reid_id']
-            confidence = result['confidence']
-
-            # 绘制边界框
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            # 在边界框上方显示重识别ID
-            if reid_id is not None:
-                label = f"ID: {reid_id}"
-                cv2.putText(annotated_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-        return annotated_frame
-    '''
-    def process_reid_target_filtered(self, frame):
-        """执行重识别处理，只显示与目标匹配的对象"""
-        current_time = time.time()
-
-        # 运行跟踪推理
-        results = self.yolo_model.track(frame, show=False, classes=[0], persist=True, verbose=False)  # 不显示结果，但保留跟踪ID
-
-        # 为每个检测框分配重识别ID并检查是否与目标匹配
-        target_filtered_results = []
-        if results[0].boxes is not None:
-            for i, box in enumerate(results[0].boxes):
-                # 获取边界框坐标 (x1, y1, x2, y2)
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
-
-                # 确保坐标在图像范围内
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = min(frame.shape[1], x2)
-                y2 = min(frame.shape[0], y2)
-
-                # 裁剪图像
-                cropped_img = frame[y1:y2, x1:x2]
-
-                # 提取ReID特征
-                feature = self.extract_reid_features_batch([cropped_img], self.reid_model, cfg, self.device)[0]
-
-                # 检查是否与目标匹配
-                is_match = self.is_target_match(feature)
-
-                if is_match:
-                    # 使用聚类内存管理分配ID
-                    reid_id = self.memory_manager.assign_feature(feature, current_time)
-
-                    # 保存结果
-                    target_filtered_results.append({
-                        'bbox': (x1, y1, x2, y2),
-                        'reid_id': reid_id,
-                        'confidence': box.conf[0].cpu().numpy()
-                    })
-
-        # 在帧上绘制匹配的目标
-        annotated_frame = frame.copy()
-        for result in target_filtered_results:
-            x1, y1, x2, y2 = result['bbox']
-            reid_id = result['reid_id']
-            confidence = result['confidence']
-
-            # 绘制边界框
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            # 在边界框上方显示重识别ID
-            if reid_id is not None:
-                label = f"Target ID: {reid_id}"
-                cv2.putText(annotated_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-        return annotated_frame
-
     # 执行目标匹配处理，与任务目标匹配的用红色框标注，其他不匹配的用绿色框
     def process_target_with_color_coding(self, frame):
         current_time = time.time()
@@ -384,33 +219,38 @@ class reid_node_0:
         all_results = []
         if results[0].boxes is not None:
             for i, box in enumerate(results[0].boxes):
-                # 获取边界框坐标 (x1, y1, x2, y2)
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                # 确保检测到的是人，避免衣服等也被检测
+                if box.conf[0].cpu().numpy() > 0.75:
+                    # 获取边界框坐标 (x1, y1, x2, y2)
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
 
-                # 确保坐标在图像范围内
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = min(frame.shape[1], x2)
-                y2 = min(frame.shape[0], y2)
+                    # 确保坐标在图像范围内
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(frame.shape[1], x2)
+                    y2 = min(frame.shape[0], y2)
 
-                # 裁剪图像
-                cropped_img = frame[y1:y2, x1:x2]
+                    # 裁剪图像
+                    cropped_img = frame[y1:y2, x1:x2]
 
-                # 提取ReID特征
-                feature = self.extract_reid_features_batch([cropped_img], self.reid_model, cfg, self.device)[0]
+                    # 提取ReID特征
+                    feature = self.extract_reid_features_batch([cropped_img], self.reid_model, cfg, self.device)[0]
 
-                # 检查是否与目标匹配
-                # is_match = self.is_target_match(feature)
+                    # 计算与目标图像的相似度
+                    similarity = self.calculate_similarity_to_target(feature)
 
-                # 使用聚类内存管理分配ID
-                reid_id = self.memory_manager.assign_feature(feature, current_time)
+                    # 检查是否与目标匹配
+                    # is_match = self.is_target_match(feature)
 
-                if reid_id == 0:
+                    # 根据相似度分配ID：高相似度分配ID 0（目标），低相似度分配其他ID
+                    reid_id = self.assign_id_by_similarity(similarity, self.similarity_value)
+                    
                     # 保存结果
                     all_results.append({
                         'bbox': (x1, y1, x2, y2),
                         'reid_id': reid_id,
-                        'confidence': box.conf[0].cpu().numpy()
+                        'confidence': box.conf[0].cpu().numpy(),
+                        'similarity': similarity  # 添加相似度信息
                     })
 
         # 在帧上绘制所有目标，匹配的用红色框，不匹配的用绿色框
@@ -419,19 +259,44 @@ class reid_node_0:
             x1, y1, x2, y2 = result['bbox']
             reid_id = result['reid_id']
             confidence = result['confidence']
+            similarity = result['similarity']
 
-            # 根据是否匹配选择颜色：匹配的用红色，不匹配的用绿色
-            color = (0, 0, 255)
+            # 根据相似度选择颜色：高相似度用绿色，低相似度用红色
+            if similarity >= self.similarity_value:  # 阈值可以根据需要调整
+                color = (0, 255, 0)  # 绿色表示匹配度高
 
-            # 绘制边界框
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                # 绘制边界框
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
 
-            # 在边界框上方显示重识别ID
-            if reid_id is not None:
-                label = f"Target ID: {reid_id}"
-                cv2.putText(annotated_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                # 在边界框上方显示重识别ID和相似度
+                if reid_id is not None:
+                    # 显示ID和相似度
+                    id_label = f"ID: {reid_id}"
+                    similarity_label = f"Sim: {similarity:.2f}"
+                    
+                    # 在边界框上方显示ID
+                    cv2.putText(annotated_frame, id_label, (x1, y1 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+                    # 在边界框上方显示相似度
+                    cv2.putText(annotated_frame, similarity_label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
         return annotated_frame
+    
+    def calculate_similarity_to_target(self, feature):
+        """计算特征与目标特征的相似度"""
+        if not self.target_set or self.target_feature is None:
+            # 如果没有设置目标，则返回0相似度
+            return 0.0
+
+        # 计算余弦相似度
+        dot_product = np.dot(feature, self.target_feature)
+        norm_product = np.linalg.norm(feature) * np.linalg.norm(self.target_feature)
+
+        if norm_product == 0:
+            similarity = 0.0
+        else:
+            similarity = dot_product / norm_product
+
+        return similarity
 
     def extract_reid_features_batch(self, images, reid_model, cfg, device):
         """批量提取重识别特征，使用与项目一致的处理方式"""
@@ -494,34 +359,19 @@ class reid_node_0:
         return annotated_frame
 
 
-def assign_id_to_feature(feature, known_features, known_ids, threshold=0.9):
-    """
-    根据特征向量相似度为新特征分配ID，使用与inference_processor.py一致的逻辑
-    """
-    if len(known_features) == 0:
-        return None
-
-    # 计算与所有已知特征的余弦相似度，与inference_processor.py保持一致
-    similarities = []
-    for known_feat in known_features:
-        # 计算余弦相似度
-        dot_product = np.dot(feature, known_feat)
-        norm_product = np.linalg.norm(feature) * np.linalg.norm(known_feat)
-        if norm_product == 0:
-            similarity = 0
+    def assign_id_by_similarity(self, similarity, threshold):
+        """根据相似度分配ID"""
+        if similarity >= threshold:
+            return 0  # 高相似度分配ID 0，表示目标
         else:
-            similarity = dot_product / norm_product
-        similarities.append(similarity)
-
-    # 找到最大相似度
-    max_similarity = max(similarities)
-    max_index = similarities.index(max_similarity)
-
-    # 如果最大相似度超过阈值，则认为是同一个ID
-    if max_similarity >= threshold:
-        return known_ids[max_index]
-    else:
-        return None
+            # # 为低相似度目标分配递增的ID
+            # # 使用一个计数器来分配唯一的ID
+            # if not hasattr(self, 'non_target_counter'):
+            #     self.non_target_counter = 1  # 从1开始，0保留给目标
+            # id = self.non_target_counter
+            # self.non_target_counter += 1
+            # return id
+            return 10
 
 
 if __name__ == '__main__':
