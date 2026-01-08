@@ -11,6 +11,7 @@ import cv2
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import os
+import yaml
 
 
 class VideoPublisher:
@@ -18,8 +19,15 @@ class VideoPublisher:
         # 初始化ROS节点
         rospy.init_node('video_pub_node', anonymous=True)
 
+        # 获取当前脚本所在目录，获取配置文件
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(current_dir, 'config.yaml')
+
+        with open(config_path, 'r') as file:
+            self.config = yaml.safe_load(file)
+
         # 从ROS参数获取视频文件路径或使用默认值
-        self.video_path_0 = rospy.get_param('~video_path_0', '/home/u/Videos/dancetrack_test1.mp4')
+        self.video_path_0 = self.config['video_path_0']
 
         self.video_topic_0 = rospy.get_param('~video_topic_0', '/video_pub_node/image_raw_0')
 

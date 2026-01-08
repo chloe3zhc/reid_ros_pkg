@@ -27,8 +27,7 @@ import json
         fps (float): 视频帧率
 '''
 class ClusteredMemoryManager:
-    def __init__(self, max_clusters=100, eps=0.20, min_samples=2,
-        update_rate=0, max_inactive_seconds=50.0, fps=15):
+    def __init__(self, max_clusters, eps, min_samples, update_rate, max_inactive_seconds, fps):
         # 簇存储
         self.clusters = []  # 簇中心 [numpy array]
         self.cluster_ids = []  # 簇ID [int]
@@ -218,3 +217,34 @@ class ClusteredMemoryManager:
             'avg_cluster_size': np.mean(self.cluster_sizes) if self.cluster_sizes else 0,
             'memory_usage_kb': len(self.clusters) * self.clusters[0].nbytes / 1024 if self.clusters else 0
         }
+    
+    def has_id(self, reid_id):
+        """检查ID是否存在于活跃聚类中"""
+        return reid_id in self.cluster_ids and reid_id not in self.inactive_ids
+    
+    def get_center_by_id(self, reid_id):
+        """获取指定ID的聚类中心"""
+        if not self.has_id(reid_id):
+            raise ValueError(f"ID {reid_id} not found in active clusters")
+        
+        idx = self.cluster_ids.index(reid_id)
+        return self.clusters[idx]
+    
+    def update_center_by_id(self, reid_id, new_feature, alpha=0.2):
+        """更新指定ID的聚类中心
+        Args:
+            reid_id: 要更新的ID
+            new_feature: 新特征向量
+            alpha: 更新率 (0~1), 值越大新特征权重越大
+        """
+        if not self.has_id(reid_id):
+            rospy.logwarn(f"Attempted to update inactive ID {reid_id}, skipping")
+            return
+        
+        idx = self.cluster_ids.index(reid_id)
+        
+        # 指数移动平均更新
+        self.clusters[idx] = alpha * new_feature + (1 - alpha) * self.clusters[idx]
+        
+        # 更新最后活动时间
+        self.last_active_time[reid_id] = time.time()

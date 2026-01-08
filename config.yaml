@@ -1,0 +1,18 @@
+# 聚类参数
+max_clusters: 150
+eps: 0.20
+min_samples: 2
+update_rate: 0.2
+max_inactive_seconds: 50.0
+fps: 30
+
+# 模型路径参数
+yolo_model_path: "/home/u/catkin_ws/src/reid_ros_pkg/yolo11n.pt"
+reid_model_path: "/home/u/catkin_ws/src/reid_ros_pkg/FusionReID_180.pth"
+reid_config_path: "/home/u/catkin_ws/src/reid_ros_pkg/configs/MSMT17/msmt_vitb12_res50_layer2.yml"
+
+# 检测框置信度参数
+bbox_conf_threshold: 0.75
+
+# 视频路径
+video_path_0: "/home/u/Videos/zhc1.mp4"
